@@ -85,6 +85,8 @@ Install the rvideo tools (on OS X at least - your system may differ). You might 
 
 Available in all good package repositories including Darwin Ports.
 
+    sudo port install ffmpeg +x264 +faac
+
 If you're developing on Mac OS X, you can save some time by [grabbing ffmpeg out of the ffmpegX application instead of compiling it](http://www.macosxhints.com/article.php?story=20061220082125312).
 
 Grab Panda

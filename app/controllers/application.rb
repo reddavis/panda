@@ -13,8 +13,8 @@ private
     case (params[:format] || "html")
     when "html"
       begin
-        @user = User.find(session[:user_key]) if session[:user_key]
-      rescue Amazon::SDB::RecordNotFoundError
+        @user = User.get!(session[:user_key]) if session[:user_key]
+      rescue DataMapper::ObjectNotFoundError
         session[:user_key] = nil
         @user = nil
       end

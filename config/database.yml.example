@@ -1,0 +1,51 @@
+# Example for mysql
+#
+:development: &defaults
+  :adapter: mysql
+  :database: panda_development
+  :username: root
+  :password: 
+  :host: localhost
+  :socket: 
+  :encoding: utf8
+
+:test:
+  <<: *defaults
+  :adapter: mysql
+  :database: panda_test
+
+:production:
+  <<: *defaults
+  :adapter: mysql
+  :database: panda_production
+  :username: root
+  :password: 
+  :socket: /var/run/mysqld/mysqld.sock
+
+
+# :development: &defaults
+#   :adapter: simpledb
+#   :domain: <%= Panda::Config[:sdb_domain] %>
+#   :host: localhost
+#   :url: http://localhost:8087
+#   :access_key: test
+#   :secret_key: test
+# 
+# :test:
+#   :adapter: simpledb
+#   :domain: panda_test
+#   :host: localhost
+#   :url: http://localhost:8087
+#   :access_key: test
+#   :secret_key: test
+# 
+# :production:
+#   <<: *defaults
+#   :adapter: simpledb
+#   :domain: <%= Panda::Config[:sdb_domain] %>
+#   :access_key: <%= Panda::Config[:access_key_id] %>
+#   :secret_key: <%= Panda::Config[:secret_access_key] %>
+  
+:rake:
+  <<: *defaults
+

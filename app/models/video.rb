@@ -1,24 +1,51 @@
-class Video < SimpleDB::Base
-  
+class Video
+  include DataMapper::Resource
   include LocalStore
   
-  set_domain Panda::Config[:sdb_videos_domain]
-  properties :filename, :original_filename, :parent, :status, :duration, :container, :width, :height, :video_codec, :video_bitrate, :fps, :audio_codec, :audio_bitrate, :audio_sample_rate, :profile, :profile_title, :player, :queued_at, :started_encoding_at, :encoding_time, :encoded_at, :last_notification_at, :notification, :updated_at, :created_at, :thumbnail_position
+  property :id, UUIDIndex, :key => true
+  property :filename, String
+  property :original_filename, String
+  property :parent, String
+  property :status, String
+  property :duration, Integer
+  property :container, String
+  property :width, Integer
+  property :height, Integer
+  property :video_codec, String
+  property :video_bitrate, String
+  property :fps, Integer
+  property :audio_codec,String 
+  property :audio_bitrate, String
+  property :audio_sample_rate, String
+  property :profile, String
+  property :profile_title, String
+  property :player, String
+  property :queued_at, Time
+  property :started_encoding_at, Time
+  property :encoding_time, String
+  property :encoded_at, String
+  property :last_notification_at, Time
+  # This is to fill the gap of different behavior between MySQL
+  # and SimpleDB in use of null.
+  # At MySQL, it won't pick up NULL: eg, notification.not 'success'
+  # If you try to search non nil: eg, notification.not = nil
+  # Then SimpleDB fails as Simpledb can not be searchable by nil
+  # As a workaround, I forced default as empty string
+  property :notification, String, :default => '', :nullable => false
+  property :updated_at, Time
+  property :created_at, Time
+  property :thumbnail_position, String
   
   # TODO: state machine for status
   # An original video can either be 'empty' if it hasn't had the video file uploaded, or 'original' if it has
   # An encoding will have it's original attribute set to the key of the original parent, and a status of 'queued', 'processing', 'success', or 'error'
   
   def self.create_empty
-    video = Video.create
+    video = Video.new
     video.status = 'empty'
     video.save
     
     return video
-  end
-  
-  def to_sym
-    'videos'
   end
   
   def clipping(position = nil)
@@ -45,50 +72,48 @@ class Video < SimpleDB::Base
   # Finders
   # =======
   
-  # Only parent videos (no encodings)
-  def self.all
-    self.query("['status' = 'original'] intersection ['created_at' != ''] sort 'created_at' desc", :load_attrs => true) # TODO: Don't throw an exception if attrs for a record in the search can't be found - it probably means its just been deleted
-  end
-  
-  def self.recent_videos
-    self.query("['status' = 'original']", :max_results => 10, :load_attrs => true)
-  end
-  
-  def self.recent_encodings
-    self.query("['status' = 'success']", :max_results => 10, :load_attrs => true)
+  # Original videos sorted by creation date (newest first)
+  def self.all_originals
+    # This fails with simpledb adaptor (sort order is random it seems)
+    # self.all(:status => "original", :order => [:created_at.desc])
+    
+    self.all(:status => "original").sort_by { |o| o.created_at }.reverse
   end
   
   def self.queued_encodings
-    self.query("['status' = 'processing' or 'status' = 'queued']", :load_attrs => true)
+    self.all(:status => 'queued') + self.all(:status => "processing")
+    
+    # TODO: Doesn't work
+    # self.all(:status => ['queued', 'processing'])
   end
   
   def self.next_job
-    # TODO: change to outstanding_jobs and remove .first
-    self.query("['status' = 'queued']").first
+    # TODO: Doesn't work
+    # self.first(:status => "queued")
+    
+    self.all(:status => "queued").sort_by { |o| o.created_at }.first
   end
   
   def self.outstanding_notifications
-    self.query("['notification' != 'success' and 'notification' != 'error'] intersection ['status' = 'success' or 'status' = 'error']") #  sort 'last_notification_at' asc
+    # TODO: Do this in one query
+    self.all(:notification.not => "success", :notification.not => "error", :status => "success") +
+    self.all(:notification.not => "success", :notification.not => "error", :status => "error") 
   end
   
-  # def self.recently_completed_videos
-  #   self.query("['status' = 'success']")
-  # end
-  
   def parent_video
-    self.class.find(self.parent)
+    self.class.get(self.parent)
   end
   
   def encodings
-    self.class.query("['parent' = '#{self.key}']")
+    self.class.all(:parent => self.id)
   end
   
   def successful_encodings
-    self.class.query("['parent' = '#{self.key}'] intersection ['status' = 'success']")
+    self.class.all(:parent => self.id, :status => "success")
   end
   
   def find_encoding_for_profile(p)
-    self.class.query("['parent' = '#{self.key}'] intersection ['profile' = '#{p.key}']")
+    self.class.all(:parent => self.id, :profile => p.id)
   end
   
   # Attr helpers
@@ -100,9 +125,9 @@ class Video < SimpleDB::Base
     self.delete_from_store
     self.encodings.each do |e|
       e.delete_from_store
-      e.destroy!
+      e.destroy
     end
-    self.destroy!
+    self.destroy
   end
 
   # Location to store video file fetched from S3 for encoding
@@ -116,11 +141,11 @@ class Video < SimpleDB::Base
   end
   
   def upload_redirect_url
-    Panda::Config[:upload_redirect_url].gsub(/\$id/,self.key)
+    Panda::Config[:upload_redirect_url].gsub(/\$id/, self.id)
   end
   
   def state_update_url
-    Panda::Config[:state_update_url].gsub(/\$id/,self.key)
+    Panda::Config[:state_update_url].gsub(/\$id/, self.id)
   end
   
   def duration_str
@@ -155,7 +180,7 @@ class Video < SimpleDB::Base
   def embed_js
     return nil unless self.encoding?
   	%(
-  	<div id="flash_container_#{self.key[0..4]}"><a href="http://www.macromedia.com/go/getflashplayer">Get the latest Flash Player</a> to watch this video.</div>
+  	<div id="flash_container_#{self.id[0..4]}"><a href="http://www.macromedia.com/go/getflashplayer">Get the latest Flash Player</a> to watch this video.</div>
   	<script type="text/javascript">
       var flashvars = {};
       
@@ -168,7 +193,7 @@ class Video < SimpleDB::Base
       var params = {wmode:"transparent",allowfullscreen:"true"};
       var attributes = {};
       attributes.align = "top";
-      swfobject.embedSWF("#{Store.url('player.swf')}", "flash_container_#{self.key[0..4]}", "#{self.width}", "#{self.height}", "9.0.115", "#{Store.url('expressInstall.swf')}", flashvars, params, attributes);
+      swfobject.embedSWF("#{Store.url('player.swf')}", "flash_container_#{self.id[0..4]}", "#{self.width}", "#{self.height}", "9.0.115", "#{Store.url('expressInstall.swf')}", flashvars, params, attributes);
   	</script>
   	)
 	end
@@ -240,7 +265,7 @@ class Video < SimpleDB::Base
     raise NotValid unless self.empty?
     
     # Set filename and original filename
-    self.filename = self.key + File.extname(file[:filename])
+    self.filename = self.id + File.extname(file[:filename])
     # Split out any directory path Windows adds in
     self.original_filename = file[:filename].split("\\\\").last
     
@@ -253,7 +278,7 @@ class Video < SimpleDB::Base
   end
   
   # Uploads video to store, generates thumbnails if required, cleans up 
-  # tempoary file, and adds encodings to the encoding queue.
+  # temporary file, and adds encodings to the encoding queue.
   # 
   def finish_processing_and_queue_encodings
     self.upload_to_store
@@ -276,7 +301,7 @@ class Video < SimpleDB::Base
   # Raises FormatNotRecognised if the video is not valid
   # 
   def read_metadata
-    Merb.logger.info "#{self.key}: Reading metadata of video file"
+    Merb.logger.info "#{self.id}: Reading metadata of video file"
     
     inspector = RVideo::Inspector.new(:file => self.tmp_filepath)
     
@@ -301,19 +326,19 @@ class Video < SimpleDB::Base
   def create_encoding_for_profile(p)
     encoding = Video.new
     encoding.status = 'queued'
-    encoding.filename = "#{encoding.key}.#{p.container}"
+    encoding.filename = "#{encoding.id}.#{p.container}"
     
     # Attrs from the parent video
-    encoding.parent = self.key
+    encoding.parent = self.id
     [:original_filename, :duration].each do |k|
-      encoding.send("#{k}=", self.get(k))
+      encoding.send("#{k}=", self.attribute_get(k))
     end
     
     # Attrs from the profile
-    encoding.profile = p.key
+    encoding.profile = p.id
     encoding.profile_title = p.title
     [:container, :width, :height, :video_codec, :video_bitrate, :fps, :audio_codec, :audio_bitrate, :audio_sample_rate, :player].each do |k|
-      encoding.send("#{k}=", p.get(k))
+      encoding.send("#{k}=", p.attribute_get(k))
     end
     
     encoding.save
@@ -322,15 +347,15 @@ class Video < SimpleDB::Base
   
   # TODO: Breakout Profile adding into a different method
   def add_to_queue
-    # Die if there's no profiles!
-    if Profile.query.empty?
+    # Die if there aren't any profiles
+    if Profile.all.empty?
       Merb.logger.error "There are no encoding profiles!"
       return nil
     end
     
     # TODO: Allow manual selection of encoding profiles used in both form and api
     # For now we will just encode to all available profiles
-    Profile.query.each do |p|
+    Profile.all.each do |p|
       if self.find_encoding_for_profile(p).empty?
         self.create_encoding_for_profile(p)
       end
@@ -360,7 +385,11 @@ class Video < SimpleDB::Base
   def show_response
     r = {
       :video => {
+<<<<<<< HEAD:app/models/video.rb
         :id => self.key,
+=======
+        :id => self.id,
+>>>>>>> newbamboo/dm:app/models/video.rb
         :status => self.status
       }
     }
@@ -391,7 +420,7 @@ class Video < SimpleDB::Base
   
   def create_response
     {:video => {
-        :id => self.key
+        :id => self.id
       }
     }
   end
@@ -445,7 +474,7 @@ class Video < SimpleDB::Base
     response = http.request(req)
     
     unless response.code.to_i == 200# and response.body.match /ok/
-      ErrorSender.log_and_email("notification error", "Error sending notification for parent video #{self.key} to #{self.state_update_url} (POST)
+      ErrorSender.log_and_email("notification error", "Error sending notification for parent video #{self.id} to #{self.state_update_url} (POST)
 
 REQUEST PARAMS
 #{"="*60}\n#{params.to_yaml}\n#{"="*60}
@@ -560,38 +589,8 @@ RESPONSE
   def encode_mp4_aac_flash
     Merb.logger.info "Encoding with encode_mp4_aac_flash"
     transcoder = RVideo::Transcoder.new
-    # Just the video without audio
-    temp_video_output_file = "#{self.tmp_filepath}.temp.video.mp4"
-    temp_audio_output_file = "#{self.tmp_filepath}.temp.audio.mp4"
-    temp_audio_output_wav_file = "#{self.tmp_filepath}.temp.audio.wav"
-
-    recipe = "ffmpeg -i $input_file$ -b $video_bitrate_in_bits$ -an -vcodec libx264 -rc_eq 'blurCplx^(1-qComp)' -qcomp 0.6 -qmin 10 -qmax 51 -qdiff 4 -coder 1 -flags +loop -cmp +chroma -partitions +parti4x4+partp8x8+partb8x8 -me hex -subq 5 -me_range 16 -g 250 -keyint_min 25 -sc_threshold 40 -i_qfactor 0.71 $resolution_and_padding$ -r 24 -threads 4 -y $output_file$"
-    recipe_audio_extraction = "ffmpeg -i $input_file$ -ar 48000 -ac 2 -y $output_file$"
-
-    transcoder.execute(recipe, self.recipe_options(self.parent_video.tmp_filepath, temp_video_output_file))
-    
-    Merb.logger.info "Video encoding done"
-    unless self.parent_video.audio_codec.blank?
-      # We have to use nero to encode the audio as ffmpeg doens't support HE-AAC yet
-      transcoder.execute(recipe_audio_extraction, recipe_options(self.parent_video.tmp_filepath, temp_audio_output_wav_file))
-      Merb.logger.info "Audio extraction done"
-
-      # Convert to HE-AAC
-      %x(neroAacEnc -br #{self.audio_bitrate_in_bits} -he -if #{temp_audio_output_wav_file} -of #{temp_audio_output_file})
-      Merb.logger.info "Audio encoding done"
-
-      # Squash the audio and video together
-      FileUtils.rm(self.tmp_filepath) if File.exists?(self.tmp_filepath) # rm, otherwise we end up with multiple video streams when we encode a few times!!
-      %x(MP4Box -add #{temp_video_output_file}#video #{self.tmp_filepath})
-      %x(MP4Box -add #{temp_audio_output_file}#audio #{self.tmp_filepath})
-
-      # Interleave meta data
-      %x(MP4Box -inter 500 #{self.tmp_filepath})
-      Merb.logger.info "Squashing done"
-    else
-      Merb.logger.info "This video does't have an audio stream"
-      FileUtils.mv(temp_video_output_file, self.tmp_filepath)
-    end
+    recipe = "ffmpeg -i $input_file$ -acodec libfaac -ar 48000 -ab $audio_bitrate$k -ac 2 -b $video_bitrate_in_bits$ -vcodec libx264 -rc_eq 'blurCplx^(1-qComp)' -qcomp 0.6 -qmin 10 -qmax 51 -qdiff 4 -coder 1 -flags +loop -cmp +chroma -partitions +parti4x4+partp8x8+partb8x8 -me hex -subq 5 -me_range 16 -g 250 -keyint_min 25 -sc_threshold 40 -i_qfactor 0.71 $resolution_and_padding$ -r 24 -threads 4 -y $output_file$"
+    transcoder.execute(recipe, self.recipe_options(self.parent_video.tmp_filepath, self.tmp_filepath))
   end
   
   def encode_unknown_format
@@ -612,7 +611,7 @@ RESPONSE
     begin
       encoding = self
       parent_obj = self.parent_video
-      Merb.logger.info "(#{Time.now.to_s}) Encoding #{self.key}"
+      Merb.logger.info "(#{Time.now.to_s}) Encoding #{self.id}"
     
       parent_obj.fetch_from_store
 
@@ -646,7 +645,7 @@ RESPONSE
       self.save
       FileUtils.rm parent_obj.tmp_filepath
       
-      Merb.logger.error "Unable to transcode file #{self.key}: #{$!.class} - #{$!.message}"
+      Merb.logger.error "Unable to transcode file #{self.id}: #{$!.class} - #{$!.message}"
         
       raise
     end

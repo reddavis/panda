@@ -49,9 +49,8 @@ Panda::Config.use do |p|
   
   # SimpleDB domains (you need only change these if you have multiple Panda 
   # instances using your AWS account):
-  p[:sdb_videos_domain]     = "panda_videos"
-  p[:sdb_users_domain]      = "panda_users"
-  p[:sdb_profiles_domain]   = "panda_profiles"
+  
+  p[:sdb_domain]            = "panda"
   
   # ================================================
   # Thumbnail

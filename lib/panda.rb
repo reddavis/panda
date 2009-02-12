@@ -7,15 +7,16 @@ module Panda
         S3Store.create_bucket
       end
       
-      def create_sdb_domain(name)
-        SimpleDB::Base.connection.create_domain(name)
-      end
-      
-      def create_sdb_domains
-        %w{sdb_videos_domain sdb_users_domain sdb_profiles_domain}.map do |d|
-          Panda::Setup.create_sdb_domain(Panda::Config[d.to_sym])
+      def create_sdb_domain
+        if DataMapper::Adapters.const_defined?(:SimpleDBAdapter) && DataMapper.repository.adapter.is_a?(DataMapper::Adapters::SimpleDBAdapter)
+          SDB_CONNECTION.create_domain(Panda::Config[:sdb_domain])
+        else
+          DataMapper.auto_migrate!
         end
       end
+      
+      # API compatibility
+      alias :create_sdb_domains :create_sdb_domain
     end
   end
 
@@ -57,7 +58,7 @@ module Panda
         check_present(:upload_redirect_url)
         check_present(:state_update_url)
         
-        %w{sdb_videos_domain sdb_users_domain sdb_profiles_domain}.each do |d|
+        %w{sdb_domain}.each do |d|
           check_present(d.to_sym)
         end
       end

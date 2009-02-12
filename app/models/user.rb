@@ -1,20 +1,29 @@
-class User < SimpleDB::Base
-  set_domain Panda::Config[:sdb_users_domain]
-  properties :password, :email, :salt, :crypted_password, :api_key, :updated_at, :created_at
+class User
+  include DataMapper::Resource
+  
+  property :id, String, :key => true
+  property :password, String
+  property :email, String
+  property :salt, String
+  property :crypted_password, String
+  property :api_key, String
+  property :updated_at, Time
+  property :created_at, Time
+  
   attr_accessor :password, :password_confirmation
   
   def login
-    self.new_record ? '' : self.key
+    self.id
   end
   
   def login=(v)
-    self.key = v
+    self.id = v
   end
   
   def self.authenticate(login, password)
     begin
-      u = self.find(login) # Login is the key of the SimpleDB object
-    rescue Amazon::SDB::RecordNotFoundError
+      u = self.get!(login)
+    rescue DataMapper::ObjectNotFoundError
       return nil
     else
       puts "#{u.crypted_password} | #{encrypt(password, u.salt)}"

@@ -3,6 +3,13 @@ require File.join( File.dirname(__FILE__), "..", "spec_helper" )
 describe S3Store do
   
   before :each do
+    
+    Panda::Config.use do |p|
+      p[:videos_domain] = "videos.pandastream.com"
+      p[:s3_videos_bucket] = "myvideosbucket"
+    end
+    
+    AWS::S3::Base.stub!('establish_connection!')
     @store = S3Store.new
     
     @fp = mock(File)

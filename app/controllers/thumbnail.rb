@@ -53,9 +53,9 @@ class Thumbnail < Application
   
   private
   
+  # Throws DataMapper::ObjectNotFoundError if video cannot be found
   def get_video
-    # Throws Amazon::SDB::RecordNotFoundError if video cannot be found
-    @video = Video.find(params[:video_id])
+    @video = Video.get!(params[:video_id])
   end
   
   def ensure_that_clipping_can_be_changed

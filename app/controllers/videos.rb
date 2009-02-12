@@ -6,7 +6,7 @@ class Videos < Application
   def index
     provides :html, :xml, :yaml
     
-    @videos = Video.all
+    @videos = Video.all_originals
     
     display @videos
   end
@@ -16,16 +16,10 @@ class Videos < Application
     
     case content_type
     when :html
-      # TODO: use proper auth method
-      @user = User.find(session[:user_key]) if session[:user_key]
-      if @user
-        if @video.status == "original"
-          render :show_parent
-        else
-          render :show_encoding
-        end
+      if @video.status == "original"
+        render :show_parent
       else
-        redirect("/login")
+        render :show_encoding
       end
     when :xml
       @video.show_response.to_simple_xml
@@ -74,12 +68,12 @@ class Videos < Application
   # Use: HQ, http/iframe upload
   def upload
     begin
-      @video = Video.find(params[:id])
+      @video = Video.get(params[:id])
       @video.initial_processing(params[:file])
-    rescue Amazon::SDB::RecordNotFoundError
+    rescue DataMapper::ObjectNotFoundError
       # No empty video object exists
       self.status = 404
-      render_error($!.to_s.gsub(/Amazon::SDB::/,""))
+      render_error($!.to_s.gsub(/DataMapper::/,""))
     rescue Video::NotValid
       # Video object is not empty. Likely a video has already been uploaded.
       self.status = 404
@@ -131,17 +125,19 @@ private
     end
   end
   
+  # Throws DataMapper::ObjectNotFoundError if video cannot be found
   def set_video
-    # Throws Amazon::SDB::RecordNotFoundError if video cannot be found
-    @video = Video.find(params[:id])
+    @video = Video.get!(params[:id])
+  rescue DataMapper::ObjectNotFoundError
+    raise NotFound
   end
   
   def set_video_with_nice_errors
     begin
-      @video = Video.find(params[:id])
-    rescue Amazon::SDB::RecordNotFoundError
+      @video = Video.get!(params[:id])
+    rescue DataMapper::ObjectNotFoundError
       self.status = 404
-      throw :halt, render_error($!.to_s.gsub(/Amazon::SDB::/,""))
+      throw :halt, render_error($!.to_s.gsub(/DataMapper::/,""))
     end
   end
   
